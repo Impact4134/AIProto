@@ -1,0 +1,1509 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>3D 뗏목 서바이벌 (Raft Survivor)</title>
+    <!-- Tailwind CSS for UI -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Import Map for reliable module loading -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.164.0/build/three.module.js"
+            }
+        }
+    </script>
+
+    <style>
+        body { margin: 0; overflow: hidden; touch-action: none; user-select: none; font-family: 'Noto Sans KR', sans-serif; background: #000; }
+        
+        /* 조이스틱 위치: 하단 중앙 */
+        #joystick-zone {
+            position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%); width: 120px; height: 120px;
+            background: rgba(255, 255, 255, 0.1); border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.3);
+            display: flex; justify-content: center; align-items: center; pointer-events: auto; z-index: 30;
+        }
+        #joystick-knob {
+            width: 50px; height: 50px; background: rgba(255, 255, 255, 0.8); border-radius: 50%;
+            position: absolute; transform: translate(0, 0); box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+
+        /* 동작 버튼 위치 */
+        #action-btn {
+            position: absolute; bottom: 180px; left: 50%; transform: translateX(-50%); width: 80px; height: 80px;
+            background: #fca5a5; border-radius: 50%; border: 4px solid #fff;
+            display: none; justify-content: center; align-items: center; font-weight: bold; color: #7f1d1d;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5); cursor: pointer; pointer-events: auto; z-index: 30;
+            transition: transform 0.1s;
+        }
+        #action-btn:active { transform: scale(0.9) translateX(-55%); }
+        
+        /* 강화 버튼 */
+        #upgrade-btn { 
+            position: absolute; bottom: 80px; left: 50%; margin-left: 100px; 
+            background: #3b82f6; color: white; padding: 12px 24px; border-radius: 30px; 
+            font-weight: bold; border: 2px solid white; box-shadow: 0 4px 6px rgba(0,0,0,0.3); 
+            transition: background 0.2s; cursor: pointer; pointer-events: auto; z-index: 30;
+        }
+        #upgrade-btn:active { transform: scale(0.95); background: #2563eb; }
+
+        /* 좌측 상단 UI */
+        #left-ui {
+            position: absolute; top: 20px; left: 20px; display: flex; flex-direction: column; gap: 10px; pointer-events: auto; z-index: 30;
+        }
+        #cheat-btn { background: #8b5cf6; font-size: 12px; padding: 6px 10px; border-radius: 8px; border: 1px solid #fff; cursor: pointer; color: white; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.3); }
+        #cheat-btn:active { background: #7c3aed; }
+        #balance-btn { background: #10b981; font-size: 12px; padding: 6px 10px; border-radius: 8px; border: 1px solid #fff; cursor: pointer; color: white; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.3); }
+        #balance-btn:active { background: #059669; }
+        /* 퀘스트 완료 치트 버튼 */
+        #quest-cheat-btn { background: #f59e0b; font-size: 12px; padding: 6px 10px; border-radius: 8px; border: 1px solid #fff; cursor: pointer; color: white; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.3); }
+        #quest-cheat-btn:active { background: #d97706; }
+
+        /* 좌측 하단 상태 패널 (갈증) */
+        #status-panel {
+            position: absolute; bottom: 40px; left: 20px; width: 100px;
+            background: rgba(0,0,0,0.5); padding: 10px; border-radius: 10px;
+            color: white; pointer-events: none; z-index: 30;
+            display: none; 
+            flex-direction: column; gap: 5px;
+        }
+        #thirst-label { font-size: 14px; font-weight: bold; color: #93c5fd; }
+        #thirst-bar-container { width: 100%; height: 8px; background: #333; border-radius: 4px; overflow: hidden; border: 1px solid #555; }
+        #thirst-fill { width: 100%; height: 100%; background: #3b82f6; transition: width 0.2s; }
+        
+        /* 비네트 효과 (갈증 디버프) */
+        #vignette {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: radial-gradient(circle, transparent 50%, black 100%);
+            pointer-events: none; z-index: 25; display: none;
+            animation: breathe 2s infinite alternate;
+        }
+        @keyframes breathe { from { opacity: 0.7; } to { opacity: 0.9; } }
+
+        /* 3D 라벨 */
+        .hud-label {
+            position: absolute; pointer-events: none; width: 100px; text-align: center;
+            top: 0; left: 0;
+            display: flex; flex-direction: column; align-items: center;
+        }
+        .bar-container { width: 60px; height: 6px; background: rgba(0,0,0,0.5); margin: 2px auto; border-radius: 3px; overflow: hidden; border: 1px solid rgba(255,255,255,0.3); }
+        .bar-fill { height: 100%; transition: width 0.1s; }
+        .hp-fill { background: #ef4444; }
+        .oxy-fill { background: #3b82f6; }
+
+        #ui-layer { pointer-events: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; overflow: hidden; z-index: 10; }
+        #top-ui { position: absolute; top: 20px; right: 20px; display: flex; gap: 10px; pointer-events: auto; align-items: flex-start; z-index: 30; }
+        
+        .ui-box { background: rgba(0,0,0,0.6); padding: 8px 12px; border-radius: 12px; color: white; display: flex; align-items: center; gap: 8px; border: 1px solid #555; backdrop-filter: blur(4px); }
+        
+        #backpack-warning {
+            position: absolute; top: 100px; left: 50%; transform: translateX(-50%);
+            background: rgba(239, 68, 68, 0.9); color: white; padding: 8px 16px; border-radius: 20px;
+            font-weight: bold; display: none; animation: bounce 0.5s infinite alternate; z-index: 30;
+        }
+        @keyframes bounce { from { transform: translateX(-50%) translateY(0); } to { transform: translateX(-50%) translateY(-5px); } }
+
+        #night-timer {
+            position: absolute; top: 130px; left: 50%; transform: translateX(-50%);
+            color: #ef4444; font-size: 24px; font-weight: 900; 
+            text-shadow: 2px 2px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;
+            display: none; pointer-events: none; z-index: 20;
+            animation: pulse-red 1s infinite;
+        }
+        @keyframes pulse-red {
+            0%, 100% { opacity: 1; transform: translateX(-50%) scale(1); }
+            50% { opacity: 0.8; transform: translateX(-50%) scale(1.05); }
+        }
+
+        #game-over { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 50; flex-direction: column; justify-content: center; align-items: center; color: white; pointer-events: auto; }
+        
+        #damage-overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;
+            box-shadow: inset 0 0 0 0 rgba(255,0,0,0); transition: box-shadow 0.1s; z-index: 20;
+        }
+
+        #upgrade-modal, #balance-modal { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 40; justify-content: center; align-items: center; pointer-events: auto; }
+        .modal-content { background: #1f2937; padding: 20px; border-radius: 16px; border: 4px solid #d97706; width: 90%; max-width: 400px; color: white; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+        .balance-content { border-color: #10b981; } 
+
+        .upgrade-item { display: flex; justify-content: space-between; align-items: center; background: #374151; padding: 10px; margin-bottom: 10px; border-radius: 8px; }
+        .upgrade-info h3 { margin: 0; font-size: 16px; color: #fbbf24; }
+        .upgrade-info p { margin: 0; font-size: 12px; color: #9ca3af; }
+        .upgrade-action button { background: #10b981; padding: 6px 12px; border-radius: 6px; font-weight: bold; font-size: 14px; }
+        .upgrade-action button:disabled { background: #4b5563; color: #9ca3af; cursor: not-allowed; }
+        .upgrade-cost { font-size: 12px; text-align: center; margin-top: 2px; }
+
+        .balance-item { margin-bottom: 15px; }
+        .balance-item label { display: block; font-size: 14px; color: #d1fae5; margin-bottom: 5px; }
+        .balance-item input { width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #4b5563; background: #111827; color: white; }
+
+        #resource-hud-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 15; }
+        .wood-hud { position: absolute; opacity: 0.9; display: flex; flex-direction: column; align-items: center; }
+
+        /* Guide Quest HUD */
+        #quest-hud {
+            position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.7); color: white;
+            padding: 10px 20px; border-radius: 20px; border: 2px solid #3b82f6;
+            display: flex; flex-direction: column; align-items: center; gap: 4px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            pointer-events: auto; cursor: default; transition: all 0.3s;
+            min-width: 200px; z-index: 30;
+        }
+        #quest-hud.completed {
+            border-color: #fbbf24;
+            background: rgba(50, 40, 0, 0.8);
+            cursor: pointer;
+            animation: pulse-gold 1.5s infinite;
+        }
+        @keyframes pulse-gold {
+            0% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(251, 191, 36, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0); }
+        }
+        #quest-title { font-weight: bold; font-size: 14px; color: #93c5fd; }
+        #quest-hud.completed #quest-title { color: #fbbf24; }
+        #quest-progress { font-size: 12px; color: #e5e7eb; }
+    </style>
+</head>
+<body>
+
+    <div id="canvas-container"></div>
+    <div id="damage-overlay"></div>
+    <div id="vignette"></div>
+    
+    <div id="ui-layer">
+        <!-- Quest HUD -->
+        <div id="quest-hud" onclick="window.nextQuest()">
+            <div id="quest-title">퀘스트 로딩중...</div>
+            <div id="quest-progress">0/0</div>
+        </div>
+
+        <!-- Night Timer -->
+        <div id="night-timer">
+            🌙 아침까지: <span id="night-time-val">60</span>초
+        </div>
+
+        <!-- Left Top UI (Cheat & Balance & Quest Debug) -->
+        <div id="left-ui">
+            <button id="cheat-btn">+100 나무</button>
+            <button id="balance-btn">⚖️ 밸런스</button>
+            <!-- 퀘스트 완료 버튼 -->
+            <button id="quest-cheat-btn">✅ 퀘스트 완료</button>
+        </div>
+
+        <!-- Left Bottom Status Panel (Thirst) -->
+        <div id="status-panel">
+            <div id="thirst-label">💧 갈증</div>
+            <div id="thirst-bar-container">
+                <div id="thirst-fill"></div>
+            </div>
+        </div>
+
+        <!-- Top Right UI (Inventory) -->
+        <div id="top-ui">
+            <div class="flex flex-col gap-2">
+                <div id="inventory" class="ui-box">
+                    <div class="flex items-center gap-2 border-r border-gray-500 pr-2">
+                        <span class="text-xl">🪵</span>
+                        <span id="wood-count" class="text-lg font-bold">0</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="text-xl">🥤</span>
+                        <span id="plastic-count" class="text-lg font-bold">0</span>
+                    </div>
+                </div>
+                <div id="backpack-ui" class="ui-box border-yellow-500">
+                    <span class="text-xl">🎒</span>
+                    <span id="backpack-count" class="text-lg font-bold text-yellow-300">0/3</span>
+                </div>
+            </div>
+        </div>
+
+        <div id="backpack-warning">가방이 꽉 찼습니다! 뗏목으로 돌아가세요!</div>
+
+        <div id="player-hud" class="hud-label" style="display: none;">
+            <div class="bar-container"><div id="hud-hp" class="bar-fill hp-fill" style="width: 100%;"></div></div>
+            <div class="bar-container"><div id="hud-oxy" class="bar-fill oxy-fill" style="width: 100%;"></div></div>
+        </div>
+
+        <!-- Container for Multiple Wood HUDs -->
+        <div id="resource-hud-container"></div>
+        
+        <!-- Upgrade Button -->
+        <button id="upgrade-btn">⬆️ 강화</button>
+    </div>
+
+    <div id="joystick-zone">
+        <div id="joystick-knob"></div>
+    </div>
+
+    <button id="action-btn">동작</button>
+
+    <!-- Upgrade Modal -->
+    <div id="upgrade-modal">
+        <div class="modal-content">
+            <h2 class="text-2xl font-bold mb-4 text-center text-yellow-500">장비 강화</h2>
+            <div id="upgrade-list"></div>
+            <button id="close-modal-btn" class="w-full mt-4 bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded transition">닫기</button>
+        </div>
+    </div>
+
+    <!-- Balance Modal -->
+    <div id="balance-modal">
+        <div class="modal-content balance-content">
+            <h2 class="text-2xl font-bold mb-4 text-center text-green-400">게임 밸런스 설정</h2>
+            
+            <div class="balance-item">
+                <label>상어 이동 속도 (현재: <span id="val-shark-speed"></span>)</label>
+                <input type="number" id="input-shark-speed" step="0.001">
+            </div>
+
+            <div class="balance-item">
+                <label>상어 추적 범위 (현재: <span id="val-shark-range"></span>m)</label>
+                <input type="number" id="input-shark-range" step="1">
+            </div>
+
+            <div class="balance-item">
+                <label>상어 공격력/초 (현재: <span id="val-shark-damage"></span>)</label>
+                <input type="number" id="input-shark-damage" step="5">
+            </div>
+
+            <div class="balance-item">
+                <label>나무 체력 (현재: <span id="val-wood-hp"></span>)</label>
+                <input type="number" id="input-wood-hp" step="100">
+            </div>
+
+            <div class="balance-item">
+                <label>플라스틱 체력 (현재: <span id="val-plastic-hp"></span>)</label>
+                <input type="number" id="input-plastic-hp" step="100">
+            </div>
+
+            <button id="apply-balance-btn" class="w-full mt-4 bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded transition">적용 & 닫기</button>
+        </div>
+    </div>
+
+    <div id="game-over">
+        <h1 class="text-4xl font-bold text-red-500 mb-4">GAME OVER</h1>
+        <p class="mb-6 text-gray-300">바다의 거름이 되었습니다...</p>
+        <button onclick="location.reload()" class="px-6 py-3 bg-white text-black font-bold rounded-full hover:bg-gray-200">다시 시작</button>
+    </div>
+
+    <script type="module">
+        import * as THREE from 'three';
+
+        // --- 1. 설정 및 초기화 ---
+        const clock = new THREE.Clock();
+
+        const scene = new THREE.Scene();
+        const DAY_COLOR = new THREE.Color(0x87CEEB);
+        const NIGHT_COLOR = new THREE.Color(0x050510);
+        scene.background = DAY_COLOR.clone(); 
+        scene.fog = new THREE.Fog(DAY_COLOR.clone(), 20, 100);
+
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        scene.add(ambientLight);
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        dirLight.position.set(30, 100, 50);
+        dirLight.castShadow = true;
+        dirLight.shadow.camera.left = -50;
+        dirLight.shadow.camera.right = 50;
+        dirLight.shadow.camera.top = 50;
+        dirLight.shadow.camera.bottom = -50;
+        scene.add(dirLight);
+
+        // --- 2. 게임 상태 & 사운드 매니저 ---
+        
+        const SoundManager = {
+            sounds: {},
+            init: function() {
+                this.sounds['bgm'] = new Audio(''); 
+                this.sounds['bgm'].loop = true;
+                this.sounds['bgm'].volume = 0.3;
+
+                this.sounds['splash'] = new Audio(''); 
+                this.sounds['collect'] = new Audio(''); 
+                this.sounds['build'] = new Audio(''); 
+                this.sounds['dash'] = new Audio(''); 
+                this.sounds['shot'] = new Audio(''); 
+            },
+            play: function(name) {
+                const s = this.sounds[name];
+                if (s && s.src) {
+                    s.currentTime = 0;
+                    s.play().catch(e => console.log("Audio play failed:", e));
+                }
+            },
+            playBGM: function() {
+                const s = this.sounds['bgm'];
+                if (s && s.src) {
+                    s.play().catch(e => console.log("BGM play failed:", e));
+                }
+            }
+        };
+        SoundManager.init();
+
+        window.addEventListener('click', () => SoundManager.playBGM(), { once: true });
+        window.addEventListener('touchstart', () => SoundManager.playBGM(), { once: true });
+
+
+        const gameState = {
+            wood: 0,
+            plastic: 0, 
+            backpack: 0, 
+            tempWood: 0, 
+            tempPlastic: 0, 
+            maxBackpack: 3,
+            hp: 100,
+            oxygen: 100,
+            thirst: 100, 
+            isThirstUnlocked: false, 
+            isSwimming: false,
+            isDead: false,
+            isSteering: false,
+            isRaftExpanded: false, 
+            raftWidth: 8, 
+            gameTime: 0,
+            isNight: false,
+            nightTimer: 0,
+        };
+
+        const upgradeState = {
+            harvestSpeed: { id: 'harvestSpeed', name: "⛏️ 채집 속도", desc: "자원을 더 빨리 캡니다.", level: 1, val: 5, cost: 1, costScale: 2.0, type: 'add', valScale: 3 },
+            swimSpeed: { id: 'swimSpeed', name: "🏊 수영 속도", desc: "헤엄치는 속도가 빨라집니다.", level: 1, val: 0.1, cost: 2, costScale: 2.0, type: 'add', valScale: 0.02 },
+            breath: { id: 'breath', name: "🤿 잠수 시간", desc: "산소가 천천히 줄어듭니다.", level: 1, val: 0.1, cost: 2, costScale: 2.0, type: 'sub', valScale: 0.015 }, 
+            harpoonCount: { id: 'harpoonCount', name: "⚓️ 멀티 갈고리", desc: "동시 채집 수가 증가합니다.", level: 1, val: 1, cost: 5, costScale: 2.0, type: 'add', valScale: 1 },
+            backpackSize: { id: 'backpackSize', name: "🎒 가방 크기", desc: "가방 용량이 늘어납니다.", level: 1, val: 3, cost: 3, costScale: 2.0, type: 'add', valScale: 3 },
+            harpoonRange: { id: 'harpoonRange', name: "🏹 사거리 증가", desc: "자원 수집 범위가 늘어납니다.", level: 1, val: 6, cost: 5, costScale: 2.0, type: 'add', valScale: 1 }
+        };
+
+        const CONSTANTS = {
+            WALK_SPEED: 0.15,
+            RAFT_SPEED: 0.08,
+            SHARK_SPEED: 0.036, 
+            SHARK_CHASE_DIST: 8,
+            SHARK_ATTACK_DIST: 0.75,
+            SHARK_DAMAGE: 30, 
+            HARPOON_RANGE: 6,
+            PLAYER_RADIUS: 0.3,
+            WOOD_HP: 1000,
+            PLASTIC_HP: 2000,
+            THIRST_DECAY_RATE: 100 / 180, 
+            THIRST_RECOVER_RATE: 20 
+        };
+
+        // --- 3. 퀘스트 시스템 ---
+        const QUESTS = [
+            { id: 1, type: 'MOVE', target: 200, desc: "W,A,S,D로 이동하기" }, 
+            { id: 2, type: 'COLLECT_WOOD', target: 5, desc: "나무 5개 수집하기" },
+            { id: 3, type: 'COLLECT_PLASTIC', target: 3, desc: "플라스틱 3개 수집 (하얀색 병)" }, 
+            { id: 4, type: 'BUILD_PURIFIER', target: 1, desc: "정수기를 건설하세요" },
+            { id: 5, type: 'UPGRADE_BACKPACK', target: 1, desc: "가방 크기 업그레이드" }, 
+            { id: 6, type: 'UPGRADE_HARPOON', target: 1, desc: "멀티 갈고리 업그레이드" },
+            { id: 7, type: 'UPGRADE_SWIM', target: 1, desc: "수영 속도 업그레이드" }, 
+            { id: 8, type: 'EXPAND_RAFT', target: 1, desc: "뗏목을 확장하세요 (비용 10) -> 밤 이벤트 시작!" },
+            { id: 9, type: 'BUILD_LAMP', target: 1, desc: "어둡습니다! 램프를 설치하세요 (나무 5개)" }
+        ];
+
+        const questState = {
+            currentIndex: 0,
+            currentProgress: 0,
+            isCompleted: false
+        };
+
+        const questHud = document.getElementById('quest-hud');
+        const questTitle = document.getElementById('quest-title');
+        const questProgress = document.getElementById('quest-progress');
+
+        function initQuest() {
+            updateQuestUI();
+            checkRetroactiveQuests();
+        }
+
+        function updateQuestUI() {
+            if (questState.currentIndex >= QUESTS.length) {
+                questHud.innerHTML = '<div id="quest-title" style="color:#fbbf24">모든 퀘스트 완료!</div>';
+                questHud.classList.remove('completed');
+                questHud.style.cursor = 'default';
+                return;
+            }
+            const quest = QUESTS[questState.currentIndex];
+            questTitle.innerText = quest.desc;
+            
+            if (questState.isCompleted) {
+                questProgress.innerText = "완료! (터치)";
+                questHud.classList.add('completed');
+            } else {
+                questProgress.innerText = `${questState.currentProgress} / ${quest.target}`;
+                questHud.classList.remove('completed');
+            }
+        }
+
+        function checkQuest(type, amount = 1) {
+            if (questState.currentIndex >= QUESTS.length) return;
+            if (questState.isCompleted) return;
+
+            const quest = QUESTS[questState.currentIndex];
+            if (quest.type === type) {
+                questState.currentProgress = Math.min(questState.currentProgress + amount, quest.target);
+                updateQuestUI();
+
+                if (questState.currentProgress >= quest.target) {
+                    questState.isCompleted = true;
+                    updateQuestUI();
+                }
+            }
+        }
+
+        function checkRetroactiveQuests() {
+            if (questState.currentIndex >= QUESTS.length) return;
+            const quest = QUESTS[questState.currentIndex];
+            
+            if (quest.type === 'UPGRADE_BACKPACK' && upgradeState.backpackSize.level > 1) {
+                questState.currentProgress = quest.target;
+                questState.isCompleted = true;
+                updateQuestUI();
+            }
+            if (quest.type === 'UPGRADE_HARPOON' && upgradeState.harpoonCount.level > 1) {
+                questState.currentProgress = quest.target;
+                questState.isCompleted = true;
+                updateQuestUI();
+            }
+            if (quest.type === 'UPGRADE_SWIM' && upgradeState.swimSpeed.level > 1) {
+                questState.currentProgress = quest.target;
+                questState.isCompleted = true;
+                updateQuestUI();
+            }
+            if (quest.type === 'EXPAND_RAFT' && gameState.isRaftExpanded) {
+                questState.currentProgress = quest.target;
+                questState.isCompleted = true;
+                updateQuestUI();
+            }
+        }
+
+        window.nextQuest = () => {
+            if (questState.isCompleted) {
+                questState.currentIndex++;
+                questState.currentProgress = 0;
+                questState.isCompleted = false;
+                
+                checkRetroactiveQuests();
+                updateQuestUI();
+            }
+        };
+
+        // --- 4. 오브젝트 생성 ---
+
+        const oceanGeo = new THREE.PlaneGeometry(200, 200, 40, 40);
+        oceanGeo.rotateX(-Math.PI / 2);
+        const oceanMat = new THREE.MeshPhongMaterial({ color: 0x006994, shininess: 50, flatShading: true, transparent: true, opacity: 0.9 });
+        const ocean = new THREE.Mesh(oceanGeo, oceanMat);
+        scene.add(ocean);
+
+        const raftGroup = new THREE.Group();
+        scene.add(raftGroup);
+
+        const logs = [];
+        function createRaft(width) {
+            logs.forEach(log => raftGroup.remove(log));
+            logs.length = 0;
+
+            const logCount = width; 
+            const logGeo = new THREE.CylinderGeometry(0.4, 0.4, width, 8);
+            const logMat = new THREE.MeshLambertMaterial({ color: 0x8B4513 });
+            
+            for(let i=0; i<logCount; i++) {
+                const log = new THREE.Mesh(logGeo, logMat);
+                log.rotation.z = Math.PI / 2;
+                log.position.z = (i - logCount/2 + 0.5) * 0.85; 
+                log.castShadow = true;
+                log.receiveShadow = true;
+                raftGroup.add(log);
+                logs.push(log);
+            }
+        }
+        createRaft(gameState.raftWidth); 
+
+        const rudderGroup = new THREE.Group();
+        rudderGroup.position.set(0, 0.5, gameState.raftWidth/2 - 0.5); 
+        raftGroup.add(rudderGroup);
+
+        const stickGeo = new THREE.BoxGeometry(0.2, 1.5, 0.2);
+        const stickMat = new THREE.MeshLambertMaterial({ color: 0x5D4037 });
+        const rudderStick = new THREE.Mesh(stickGeo, stickMat);
+        rudderGroup.add(rudderStick);
+        const handleGeo = new THREE.BoxGeometry(1.2, 0.1, 0.1);
+        const handle = new THREE.Mesh(handleGeo, stickMat);
+        handle.position.y = 0.7;
+        rudderGroup.add(handle);
+
+        const ghostGroup = new THREE.Group();
+        ghostGroup.position.set(2, 0.5, -1);
+        raftGroup.add(ghostGroup);
+        const ghostGeo = new THREE.BoxGeometry(1.5, 2, 1.5);
+        const ghostMat = new THREE.MeshBasicMaterial({ color: 0xffff00, wireframe: true, transparent: true, opacity: 0.5 });
+        const ghostMesh = new THREE.Mesh(ghostGeo, ghostMat);
+        ghostGroup.add(ghostMesh);
+        
+        const purifierGroup = new THREE.Group();
+        purifierGroup.visible = false;
+        ghostGroup.add(purifierGroup);
+        const pBase = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.5, 1.5), new THREE.MeshLambertMaterial({color:0x888888}));
+        const pTank = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.6, 1.5, 16), new THREE.MeshPhongMaterial({color:0xaaccff, opacity:0.8, transparent:true}));
+        pTank.position.y = 1;
+        purifierGroup.add(pBase, pTank);
+
+        const expandGhostGroup = new THREE.Group();
+        expandGhostGroup.position.set(-3.5, 0.5, -2.5); 
+        raftGroup.add(expandGhostGroup);
+        const expandGhostGeo = new THREE.BoxGeometry(1.5, 0.2, 3);
+        const expandGhostMat = new THREE.MeshBasicMaterial({ color: 0x3b82f6, wireframe: true, transparent: true, opacity: 0.7 });
+        const expandGhostMesh = new THREE.Mesh(expandGhostGeo, expandGhostMat);
+        expandGhostGroup.add(expandGhostMesh);
+
+        // 램프 건설터 그룹 (4개)
+        const lampGhostGroup = new THREE.Group();
+        lampGhostGroup.visible = false; 
+        raftGroup.add(lampGhostGroup);
+        
+        const lampGhosts = [];
+        const lampPositions = [
+            {x: 7, z: 6}, {x: -7, z: 6}, {x: 7, z: -6}, {x: -7, z: -6}
+        ];
+        const lGhostGeo = new THREE.CylinderGeometry(0.1, 0.1, 1.5, 8);
+        const lGhostMat = new THREE.MeshBasicMaterial({ color: 0xffff00, wireframe: true, opacity: 0.7, transparent: true });
+        
+        lampPositions.forEach(pos => {
+            const g = new THREE.Mesh(lGhostGeo, lGhostMat);
+            g.position.set(pos.x, 0.75, pos.z);
+            lampGhostGroup.add(g);
+            lampGhosts.push(g);
+        });
+
+        // 실제 램프 그룹
+        const lampsGroup = new THREE.Group();
+        raftGroup.add(lampsGroup);
+
+        const playerGroup = new THREE.Group();
+        scene.add(playerGroup);
+        
+        const bodyGeo = new THREE.CapsuleGeometry(CONSTANTS.PLAYER_RADIUS, 0.8, 4, 8);
+        const bodyMat = new THREE.MeshLambertMaterial({ color: 0xFFD700 }); 
+        const playerMesh = new THREE.Mesh(bodyGeo, bodyMat);
+        playerMesh.position.y = 0.7;
+        playerMesh.castShadow = true;
+        playerMesh.rotation.order = 'YXZ'; 
+        playerGroup.add(playerMesh);
+
+        const headGeo = new THREE.BoxGeometry(0.4, 0.3, 0.3);
+        const headMat = new THREE.MeshLambertMaterial({ color: 0xFFA07A });
+        const head = new THREE.Mesh(headGeo, headMat);
+        head.position.y = 0.6;
+        head.position.z = -0.15;
+        playerMesh.add(head);
+
+        const attackRangeGeo = new THREE.RingGeometry(CONSTANTS.HARPOON_RANGE - 0.2, CONSTANTS.HARPOON_RANGE, 64);
+        const attackRangeMat = new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.4, side: THREE.DoubleSide });
+        const attackRangeMesh = new THREE.Mesh(attackRangeGeo, attackRangeMat);
+        attackRangeMesh.rotation.x = -Math.PI / 2;
+        attackRangeMesh.position.y = 0.1; 
+        attackRangeMesh.visible = false; 
+        playerGroup.add(attackRangeMesh);
+
+        const resources = [];
+        const woodGeo = new THREE.CylinderGeometry(0.1, 0.1, 2, 6);
+        const woodMat = new THREE.MeshLambertMaterial({ color: 0xA0522D });
+        const plasticGeo = new THREE.CylinderGeometry(0.3, 0.3, 1.0, 8); 
+        const plasticMat = new THREE.MeshPhongMaterial({ color: 0xeeeeee }); 
+
+        function spawnResource() {
+            if(resources.length > 25) return;
+            
+            const isPlastic = Math.random() < 0.3; 
+            const mesh = isPlastic ? new THREE.Mesh(plasticGeo, plasticMat) : new THREE.Mesh(woodGeo, woodMat);
+            
+            const angle = Math.random() * Math.PI * 2;
+            const dist = 10 + Math.random() * 30;
+            mesh.position.x = raftGroup.position.x + Math.cos(angle) * dist;
+            mesh.position.z = raftGroup.position.z + Math.sin(angle) * dist;
+            mesh.position.y = 0;
+            mesh.rotation.z = Math.PI / 2;
+            mesh.rotation.y = Math.random() * Math.PI;
+            
+            if (isPlastic) {
+                mesh.userData = { type: 'plastic', hp: CONSTANTS.PLASTIC_HP, maxHp: CONSTANTS.PLASTIC_HP }; 
+            } else {
+                mesh.userData = { type: 'wood', hp: CONSTANTS.WOOD_HP, maxHp: CONSTANTS.WOOD_HP }; 
+            }
+            
+            scene.add(mesh);
+            resources.push(mesh);
+        }
+
+        const sharks = [];
+        const sharkGeo = new THREE.Group();
+        const sBody = new THREE.Mesh(new THREE.ConeGeometry(0.4, 2, 8), new THREE.MeshLambertMaterial({color: 0x444444}));
+        sBody.rotation.x = Math.PI / 2;
+        const sFin = new THREE.Mesh(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(0,0.8,-0.5), new THREE.Vector3(0,0, -1)]), new THREE.MeshLambertMaterial({color:0x555555}));
+        sFin.position.y = 0.2;
+        sharkGeo.add(sBody, sFin);
+
+        const eyeGeo = new THREE.SphereGeometry(0.05, 8, 8);
+        const eyeMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+        const leftEye = new THREE.Mesh(eyeGeo, eyeMat);
+        const rightEye = new THREE.Mesh(eyeGeo, eyeMat);
+        leftEye.position.set(0.15, 0.2, -0.8); 
+        rightEye.position.set(-0.15, 0.2, -0.8);
+        leftEye.visible = false;
+        rightEye.visible = false;
+        leftEye.name = 'LeftEye';
+        rightEye.name = 'RightEye';
+        sharkGeo.add(leftEye);
+        sharkGeo.add(rightEye);
+
+        const chaseRangeGeo = new THREE.RingGeometry(CONSTANTS.SHARK_CHASE_DIST - 0.2, CONSTANTS.SHARK_CHASE_DIST, 64);
+        const chaseRangeMat = new THREE.MeshBasicMaterial({ 
+            color: 0xff4444, 
+            transparent: true, 
+            opacity: 0.8, 
+            side: THREE.DoubleSide,
+            depthTest: false 
+        });
+        const chaseRangeMesh = new THREE.Mesh(chaseRangeGeo, chaseRangeMat);
+        chaseRangeMesh.name = 'ChaseRange'; 
+        chaseRangeMesh.rotation.x = -Math.PI / 2;
+        chaseRangeMesh.position.y = 0.3; 
+        chaseRangeMesh.renderOrder = 2; 
+        sharkGeo.add(chaseRangeMesh);
+
+        function spawnSharks() {
+            for(let i=0; i<3; i++) {
+                const shark = sharkGeo.clone();
+                const angle = (Math.PI * 2 / 3) * i;
+                shark.position.x = Math.cos(angle) * 20;
+                shark.position.z = Math.sin(angle) * 20;
+                shark.userData = { 
+                    angle: angle, 
+                    dist: 20, 
+                    state: 'PATROL',
+                    nextDashTime: Math.random() * 10, 
+                    isDashing: false,
+                    dashEndTime: 0
+                };
+                scene.add(shark);
+                sharks.push(shark);
+            }
+        }
+        spawnSharks();
+
+        const harpoonPool = [];
+        const harpoonLineGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,0)]);
+        const harpoonLineMat = new THREE.LineBasicMaterial({ color: 0xff0000, linewidth: 2 });
+        
+        for(let i=0; i<10; i++) {
+            const line = new THREE.Line(harpoonLineGeo.clone(), harpoonLineMat);
+            line.visible = false;
+            line.frustumCulled = false;
+            scene.add(line);
+            harpoonPool.push(line);
+        }
+
+        // --- 5. 입력 제어 ---
+        let joystickInput = { x: 0, y: 0 };
+        const joystickZone = document.getElementById('joystick-zone');
+        const joystickKnob = document.getElementById('joystick-knob');
+        let isTouching = false;
+        let touchStart = { x: 0, y: 0 };
+
+        function handleStart(clientX, clientY) {
+            const rect = joystickZone.getBoundingClientRect();
+            const centerX = rect.left + rect.width / 2;
+            const centerY = rect.top + rect.height / 2;
+            const dist = Math.hypot(clientX - centerX, clientY - centerY);
+            if(dist < 60) {
+                isTouching = true;
+                touchStart = { x: centerX, y: centerY };
+                updateJoystick(clientX, clientY);
+            }
+        }
+
+        function handleMove(clientX, clientY) {
+            if (!isTouching) return;
+            updateJoystick(clientX, clientY);
+        }
+
+        function handleEnd() {
+            isTouching = false;
+            joystickInput = { x: 0, y: 0 };
+            joystickKnob.style.transform = `translate(0px, 0px)`;
+        }
+
+        function updateJoystick(clientX, clientY) {
+            const maxDist = 40;
+            let dx = clientX - touchStart.x;
+            let dy = clientY - touchStart.y;
+            const dist = Math.hypot(dx, dy);
+            
+            if (dist > maxDist) {
+                const angle = Math.atan2(dy, dx);
+                dx = Math.cos(angle) * maxDist;
+                dy = Math.sin(angle) * maxDist;
+            }
+
+            joystickKnob.style.transform = `translate(${dx}px, ${dy}px)`;
+            joystickInput.x = dx / maxDist;
+            joystickInput.y = dy / maxDist;
+        }
+
+        document.addEventListener('mousedown', e => handleStart(e.clientX, e.clientY));
+        document.addEventListener('mousemove', e => handleMove(e.clientX, e.clientY));
+        document.addEventListener('mouseup', handleEnd);
+        
+        document.addEventListener('touchstart', e => handleStart(e.touches[0].clientX, e.touches[0].clientY), {passive: false});
+        document.addEventListener('touchmove', e => {
+            e.preventDefault();
+            handleMove(e.touches[0].clientX, e.touches[0].clientY);
+        }, {passive: false});
+        document.addEventListener('touchend', handleEnd);
+
+        const keys = {};
+        window.addEventListener('keydown', e => keys[e.code] = true);
+        window.addEventListener('keyup', e => keys[e.code] = false);
+
+        // --- 6. UI 및 로직 ---
+
+        const uiWood = document.getElementById('wood-count');
+        const uiPlastic = document.getElementById('plastic-count');
+        const uiBackpack = document.getElementById('backpack-count');
+        const backpackWarning = document.getElementById('backpack-warning');
+        const nightTimerUI = document.getElementById('night-timer'); 
+        const nightTimeVal = document.getElementById('night-time-val'); 
+        
+        const hudHp = document.getElementById('hud-hp');
+        const hudOxy = document.getElementById('hud-oxy');
+        const hudDiv = document.getElementById('player-hud');
+        
+        // [추가] 변수 정의 (이전 수정에서 누락되었을 수 있음)
+        const thirstFill = document.getElementById('thirst-fill');
+        const vignette = document.getElementById('vignette');
+        const statusPanel = document.getElementById('status-panel');
+
+        const resourceHudContainer = document.getElementById('resource-hud-container');
+        
+        const actionBtn = document.getElementById('action-btn');
+        const dmgOverlay = document.getElementById('damage-overlay');
+
+        const upgradeBtn = document.getElementById('upgrade-btn');
+        const cheatBtn = document.getElementById('cheat-btn');
+        const balanceBtn = document.getElementById('balance-btn');
+        const questCheatBtn = document.getElementById('quest-cheat-btn'); 
+
+        const upgradeModal = document.getElementById('upgrade-modal');
+        const balanceModal = document.getElementById('balance-modal');
+        
+        const closeModalBtn = document.getElementById('close-modal-btn');
+        const applyBalanceBtn = document.getElementById('apply-balance-btn');
+        
+        const upgradeList = document.getElementById('upgrade-list');
+
+        function openUpgradeModal() {
+            renderUpgradeList();
+            upgradeModal.style.display = 'flex';
+        }
+
+        function closeUpgradeModal() {
+            upgradeModal.style.display = 'none';
+        }
+
+        function openBalanceModal() {
+            document.getElementById('input-shark-speed').value = CONSTANTS.SHARK_SPEED;
+            document.getElementById('input-shark-range').value = CONSTANTS.SHARK_CHASE_DIST;
+            document.getElementById('val-shark-speed').innerText = CONSTANTS.SHARK_SPEED;
+            document.getElementById('val-shark-range').innerText = CONSTANTS.SHARK_CHASE_DIST;
+            
+            document.getElementById('input-shark-damage').value = CONSTANTS.SHARK_DAMAGE;
+            document.getElementById('val-shark-damage').innerText = CONSTANTS.SHARK_DAMAGE;
+
+            document.getElementById('input-wood-hp').value = CONSTANTS.WOOD_HP;
+            document.getElementById('input-plastic-hp').value = CONSTANTS.PLASTIC_HP;
+            document.getElementById('val-wood-hp').innerText = CONSTANTS.WOOD_HP;
+            document.getElementById('val-plastic-hp').innerText = CONSTANTS.PLASTIC_HP;
+
+            balanceModal.style.display = 'flex';
+        }
+
+        function applyAndCloseBalance() {
+            const newSpeed = parseFloat(document.getElementById('input-shark-speed').value);
+            const newDist = parseFloat(document.getElementById('input-shark-range').value);
+            const newDmg = parseFloat(document.getElementById('input-shark-damage').value); 
+            const newWoodHp = parseFloat(document.getElementById('input-wood-hp').value);
+            const newPlasticHp = parseFloat(document.getElementById('input-plastic-hp').value);
+
+            if(!isNaN(newSpeed) && !isNaN(newDist) && !isNaN(newWoodHp) && !isNaN(newPlasticHp) && !isNaN(newDmg)) {
+                CONSTANTS.SHARK_SPEED = newSpeed;
+                CONSTANTS.SHARK_CHASE_DIST = newDist;
+                CONSTANTS.SHARK_DAMAGE = newDmg; 
+                CONSTANTS.WOOD_HP = newWoodHp;
+                CONSTANTS.PLASTIC_HP = newPlasticHp;
+
+                const newRangeGeo = new THREE.RingGeometry(newDist - 0.2, newDist, 64);
+                
+                chaseRangeMesh.geometry.dispose();
+                chaseRangeMesh.geometry = newRangeGeo;
+
+                sharks.forEach(shark => {
+                    const rangeMesh = shark.getObjectByName('ChaseRange');
+                    if(rangeMesh) {
+                        rangeMesh.geometry.dispose();
+                        rangeMesh.geometry = newRangeGeo; 
+                    }
+                });
+
+                alert("밸런스가 적용되었습니다.");
+                balanceModal.style.display = 'none';
+            } else {
+                alert("올바른 숫자를 입력해주세요.");
+            }
+        }
+
+
+        upgradeBtn.addEventListener('click', openUpgradeModal);
+        closeModalBtn.addEventListener('click', closeUpgradeModal);
+        balanceBtn.addEventListener('click', openBalanceModal);
+        applyBalanceBtn.addEventListener('click', applyAndCloseBalance);
+        
+        cheatBtn.addEventListener('click', () => {
+            gameState.wood += 100;
+            updateUI();
+            SoundManager.play('collect'); 
+            alert("치트 사용: 나무 100개 획득!");
+        });
+
+        questCheatBtn.addEventListener('click', () => {
+            if (questState.currentIndex >= QUESTS.length) return;
+            
+            const quest = QUESTS[questState.currentIndex];
+            questState.currentProgress = quest.target;
+            questState.isCompleted = true;
+            updateQuestUI();
+            alert("퀘스트 강제 완료!");
+        });
+
+        function renderUpgradeList() {
+            upgradeList.innerHTML = '';
+            Object.values(upgradeState).forEach(item => {
+                const div = document.createElement('div');
+                div.className = 'upgrade-item';
+                
+                const canAfford = gameState.wood >= item.cost;
+                const isMax = item.level >= 10; 
+
+                div.innerHTML = `
+                    <div class="upgrade-info">
+                        <h3>${item.name} <span class="text-xs text-gray-400">Lv.${item.level}</span></h3>
+                        <p>${item.desc}</p>
+                    </div>
+                    <div class="upgrade-action flex flex-col items-center">
+                        <button onclick="window.upgradeItem('${item.id}')" ${!canAfford || isMax ? 'disabled' : ''}>
+                            ${isMax ? 'MAX' : '강화'}
+                        </button>
+                        <span class="upgrade-cost text-yellow-400">🪵 ${isMax ? '-' : item.cost}</span>
+                    </div>
+                `;
+                upgradeList.appendChild(div);
+            });
+        }
+
+        window.upgradeItem = (id) => {
+            const item = upgradeState[id];
+            if (gameState.wood >= item.cost) {
+                gameState.wood -= item.cost;
+                item.level++;
+                item.cost = Math.floor(item.cost * item.costScale);
+                
+                if(item.type === 'add') item.val += item.valScale;
+                else if(item.type === 'sub') item.val = Math.max(0.01, item.val - item.valScale);
+
+                if(id === 'backpackSize') {
+                    gameState.maxBackpack = Math.floor(item.val);
+                }
+
+                if (id === 'harpoonRange') {
+                    const scale = item.val / 6.0; 
+                    attackRangeMesh.scale.set(scale, scale, 1);
+                }
+
+                if(id === 'harpoonCount') checkQuest('UPGRADE_HARPOON');
+                if(id === 'backpackSize') checkQuest('UPGRADE_BACKPACK');
+                if(id === 'swimSpeed') checkQuest('UPGRADE_SWIM');
+                
+                SoundManager.play('build');
+
+                renderUpgradeList();
+                updateUI();
+            }
+        };
+
+        function expandRaft() {
+            if(gameState.wood >= 10) { 
+                gameState.wood -= 10;
+                gameState.isRaftExpanded = true;
+                gameState.raftWidth *= 2; 
+                
+                createRaft(gameState.raftWidth);
+                
+                rudderGroup.position.set(0, 0.5, gameState.raftWidth/2 - 0.5); 
+                
+                expandGhostGroup.visible = false;
+                
+                lampGhostGroup.visible = true;
+
+                checkQuest('EXPAND_RAFT');
+                SoundManager.play('build');
+
+                startNightEvent();
+
+                alert("뗏목 확장 완료! 밤이 찾아옵니다... 상어를 조심하세요!");
+            } else {
+                alert("나무가 부족합니다! (10개 필요)");
+            }
+        }
+
+        function buildLamp(lampGhost) {
+            if (gameState.wood >= 5) {
+                gameState.wood -= 5;
+                SoundManager.play('build');
+                
+                const lampMesh = new THREE.Group();
+                const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.5, 8), new THREE.MeshLambertMaterial({color: 0x5D4037}));
+                pole.position.y = 0.75;
+                const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.2, 16, 16), new THREE.MeshBasicMaterial({color: 0xffffaa}));
+                bulb.position.y = 1.5;
+                
+                // [수정] 밝기 5, 거리 40으로 대폭 상향
+                const light = new THREE.PointLight(0xffdd88, 5, 40);
+                light.position.y = 1.5;
+                
+                lampMesh.add(pole, bulb, light);
+                lampMesh.position.copy(lampGhost.position);
+                lampsGroup.add(lampMesh);
+                
+                lampGhost.visible = false; 
+                
+                checkQuest('BUILD_LAMP');
+                updateUI();
+                alert("램프를 설치했습니다! 주변이 환해집니다.");
+            } else {
+                alert("나무가 부족합니다! (5개 필요)");
+            }
+        }
+
+        function startNightEvent() {
+            gameState.isNight = true;
+            gameState.nightTimer = 60; 
+            nightTimerUI.style.display = 'block';
+            
+            sharks.forEach(shark => {
+                const lEye = shark.getObjectByName('LeftEye');
+                const rEye = shark.getObjectByName('RightEye');
+                if(lEye) lEye.visible = true;
+                if(rEye) rEye.visible = true;
+            });
+        }
+
+        function endNightEvent() {
+            gameState.isNight = false;
+            nightTimerUI.style.display = 'none';
+            
+            sharks.forEach(shark => {
+                const lEye = shark.getObjectByName('LeftEye');
+                const rEye = shark.getObjectByName('RightEye');
+                if(lEye) lEye.visible = false;
+                if(rEye) rEye.visible = false;
+            });
+        }
+
+        function updateUI(targets) {
+            uiWood.innerText = gameState.wood;
+            uiPlastic.innerText = gameState.plastic; 
+            
+            uiBackpack.innerText = `${gameState.backpack}/${gameState.maxBackpack}`;
+            if(gameState.backpack >= gameState.maxBackpack) {
+                uiBackpack.classList.add('text-red-500');
+                uiBackpack.classList.remove('text-yellow-300');
+                if(gameState.isSwimming) backpackWarning.style.display = 'block';
+            } else {
+                uiBackpack.classList.remove('text-red-500');
+                uiBackpack.classList.add('text-yellow-300');
+                backpackWarning.style.display = 'none';
+            }
+            if(!gameState.isSwimming) backpackWarning.style.display = 'none';
+
+            thirstFill.style.width = `${gameState.thirst}%`;
+            if (gameState.thirst < 30) {
+                thirstFill.style.backgroundColor = '#ef4444'; 
+                vignette.style.display = 'block';
+            } else {
+                thirstFill.style.backgroundColor = '#3b82f6';
+                vignette.style.display = 'none';
+            }
+
+
+            const headPos = new THREE.Vector3();
+            playerMesh.getWorldPosition(headPos);
+            headPos.y += 2.5; 
+            headPos.project(camera);
+
+            const x = (headPos.x * .5 + .5) * window.innerWidth;
+            const y = (-(headPos.y * .5) + .5) * window.innerHeight;
+
+            hudDiv.style.display = 'block';
+            hudDiv.style.transform = `translate(${x}px, ${y}px) translate(-50%, -100%)`;
+
+            hudHp.style.width = `${gameState.hp}%`;
+            hudOxy.style.width = `${gameState.oxygen}%`;
+
+            if(gameState.hp <= 30) hudHp.classList.add('animate-pulse');
+            else hudHp.classList.remove('animate-pulse');
+
+            resourceHudContainer.innerHTML = '';
+            
+            if (targets && targets.length > 0) {
+                targets.forEach(target => {
+                    const res = target.mesh;
+                    const pos = res.position.clone();
+                    pos.y += 1.5; 
+                    pos.project(camera);
+                    
+                    const wx = (pos.x * .5 + .5) * window.innerWidth;
+                    const wy = (-(pos.y * .5) + .5) * window.innerHeight;
+
+                    if (wx < 0 || wx > window.innerWidth || wy < 0 || wy > window.innerHeight) return;
+
+                    const hpPercent = (res.userData.hp / res.userData.maxHp) * 100;
+                    const barColor = res.userData.type === 'plastic' ? '#e5e7eb' : '#fbbf24';
+                    
+                    const hudEl = document.createElement('div');
+                    hudEl.className = 'wood-hud';
+                    hudEl.style.transform = `translate(${wx}px, ${wy}px) translate(-50%, -100%)`;
+                    hudEl.innerHTML = `
+                        <div class="bar-container" style="width: 40px; height: 4px; margin-bottom: 2px;">
+                            <div class="bar-fill" style="width: ${hpPercent}%; background: ${barColor};"></div>
+                        </div>
+                        <div style="font-size: 10px; color: ${barColor}; text-shadow: 1px 1px 1px black; font-weight: bold;">
+                            ${Math.ceil(res.userData.hp)}
+                        </div>
+                    `;
+                    resourceHudContainer.appendChild(hudEl);
+                });
+            }
+        }
+
+        let currentAction = null;
+        let currentTarget = null; 
+
+        actionBtn.addEventListener('click', () => {
+            if(currentAction === 'BUILD') {
+                if(gameState.wood >= 5) {
+                    gameState.wood -= 5;
+                    purifierGroup.visible = true;
+                    ghostMesh.visible = false;
+                    
+                    gameState.isThirstUnlocked = true;
+                    statusPanel.style.display = 'flex';
+
+                    checkQuest('BUILD_PURIFIER');
+                    SoundManager.play('build');
+                    alert("정수기를 건설했습니다! 이제 갈증을 관리할 수 있습니다.");
+                } else {
+                    alert("나무가 부족합니다! (5개 필요)");
+                }
+            } else if (currentAction === 'EXPAND_RAFT') {
+                expandRaft();
+            } else if (currentAction === 'BUILD_LAMP') {
+                if(currentTarget) buildLamp(currentTarget);
+            } else if (currentAction === 'STEER') {
+                gameState.isSteering = !gameState.isSteering;
+                if(gameState.isSteering) {
+                    actionBtn.innerText = "내리기";
+                    actionBtn.style.background = "#fbbf24";
+                    playerGroup.position.copy(rudderGroup.getWorldPosition(new THREE.Vector3()));
+                    playerGroup.position.y = 0.7;
+                    playerMesh.rotation.y = Math.PI;
+                    attackRangeMesh.visible = false; 
+                } else {
+                    actionBtn.innerText = "조종";
+                    actionBtn.style.background = "#fca5a5";
+                    playerGroup.position.z -= 1; 
+                }
+            }
+        });
+
+        initQuest();
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            if(gameState.isDead) return;
+
+            const dt = Math.min(clock.getDelta(), 0.1); 
+            const fpsScale = dt * 60; 
+
+            gameState.gameTime += dt;
+
+            if (gameState.isThirstUnlocked) {
+                gameState.thirst = Math.max(0, gameState.thirst - CONSTANTS.THIRST_DECAY_RATE * dt); 
+                
+                if (purifierGroup.visible) {
+                    const purifierPos = new THREE.Vector3();
+                    pBase.getWorldPosition(purifierPos);
+                    if (playerGroup.position.distanceTo(purifierPos) < 1.5) {
+                        gameState.thirst = Math.min(100, gameState.thirst + CONSTANTS.THIRST_RECOVER_RATE * dt);
+                    }
+                }
+
+                if (gameState.thirst <= 0) {
+                    gameState.hp -= 2 * dt; 
+                }
+            }
+            let thirstSpeedFactor = 1.0;
+            if (gameState.isThirstUnlocked && gameState.thirst < 30) {
+                thirstSpeedFactor = 0.5; 
+            }
+
+
+            if(gameState.isNight) {
+                gameState.nightTimer -= dt;
+                nightTimeVal.innerText = Math.ceil(gameState.nightTimer);
+                
+                scene.background.lerp(NIGHT_COLOR, 0.05);
+                scene.fog.color.lerp(NIGHT_COLOR, 0.05);
+                scene.fog.density = 0.05; 
+                ambientLight.intensity = THREE.MathUtils.lerp(ambientLight.intensity, 0.2, 0.05);
+                dirLight.intensity = THREE.MathUtils.lerp(dirLight.intensity, 0.1, 0.05);
+
+                if(gameState.nightTimer <= 0) {
+                    endNightEvent();
+                }
+            } else {
+                scene.background.lerp(DAY_COLOR, 0.02);
+                scene.fog.color.lerp(DAY_COLOR, 0.02);
+                scene.fog.density = 0.02;
+                ambientLight.intensity = THREE.MathUtils.lerp(ambientLight.intensity, 0.6, 0.02);
+                dirLight.intensity = THREE.MathUtils.lerp(dirLight.intensity, 0.8, 0.02);
+            }
+
+            let inputX = joystickInput.x;
+            let inputY = joystickInput.y;
+            if(keys['ArrowUp'] || keys['KeyW']) inputY = -1;
+            if(keys['ArrowDown'] || keys['KeyS']) inputY = 1;
+            if(keys['ArrowLeft'] || keys['KeyA']) inputX = -1;
+            if(keys['ArrowRight'] || keys['KeyD']) inputX = 1;
+
+            const inputMag = Math.hypot(inputX, inputY);
+            if(inputMag > 1) { inputX /= inputMag; inputY /= inputMag; }
+
+            if(inputMag > 0) {
+                checkQuest('MOVE', 1);
+            }
+
+            if (gameState.isSteering) {
+                if(Math.abs(inputX) > 0.1) {
+                    raftGroup.rotation.y -= inputX * 0.02 * fpsScale;
+                    rudderStick.rotation.y = inputX * 0.5;
+                } else {
+                    rudderStick.rotation.y = 0;
+                }
+                if(inputY < -0.1) {
+                    const dir = new THREE.Vector3(0, 0, -1); 
+                    dir.applyAxisAngle(new THREE.Vector3(0,1,0), raftGroup.rotation.y);
+                    raftGroup.position.add(dir.multiplyScalar(CONSTANTS.RAFT_SPEED * fpsScale));
+                    playerGroup.position.add(dir.multiplyScalar(CONSTANTS.RAFT_SPEED * fpsScale));
+                }
+                playerGroup.position.copy(rudderGroup.getWorldPosition(new THREE.Vector3()));
+                playerGroup.position.y = 0.7;
+                playerMesh.rotation.x = 0; 
+
+            } else {
+                const currentSwimSpeed = upgradeState.swimSpeed.val;
+                const moveSpeed = (gameState.isSwimming ? currentSwimSpeed : CONSTANTS.WALK_SPEED) * thirstSpeedFactor;
+                
+                const moveX = inputX;
+                const moveZ = inputY;
+
+                if (Math.abs(inputX) > 0.01 || Math.abs(inputY) > 0.01) {
+                    playerGroup.position.x += moveX * moveSpeed * fpsScale;
+                    playerGroup.position.z += moveZ * moveSpeed * fpsScale;
+                    const targetRot = Math.atan2(moveX, moveZ);
+                    playerMesh.rotation.y = targetRot;
+                }
+
+                const relPos = playerGroup.position.clone().sub(raftGroup.position);
+                relPos.applyAxisAngle(new THREE.Vector3(0,1,0), -raftGroup.rotation.y);
+                
+                const raftXSize = gameState.raftWidth; 
+                const raftZSize = gameState.raftWidth * 0.85; 
+                
+                const onRaftX = Math.abs(relPos.x) < raftXSize/2 + 0.2;
+                const onRaftZ = Math.abs(relPos.z) < raftZSize/2 + 0.2;
+                
+                if (onRaftX && onRaftZ) {
+                    if(gameState.isSwimming) {
+                        gameState.isSwimming = false;
+                        SoundManager.play('splash');
+                    }
+                    playerMesh.rotation.x = 0; 
+                    playerGroup.position.y = 0.7;
+                    gameState.oxygen = Math.min(gameState.oxygen + 0.5 * fpsScale, 100); 
+                    attackRangeMesh.visible = false;
+                    
+                    if(gameState.backpack > 0) {
+                        gameState.wood += gameState.tempWood;
+                        gameState.plastic += gameState.tempPlastic;
+                        
+                        if(gameState.tempPlastic > 0) checkQuest('COLLECT_PLASTIC', gameState.tempPlastic);
+                        if(gameState.tempWood > 0) checkQuest('COLLECT_WOOD', gameState.tempWood);
+                        
+                        gameState.backpack = 0;
+                        gameState.tempWood = 0;
+                        gameState.tempPlastic = 0;
+                        
+                        SoundManager.play('collect');
+
+                        uiWood.style.color = '#ffff00';
+                        uiPlastic.style.color = '#ffff00';
+                        setTimeout(() => {
+                            uiWood.style.color = 'white';
+                            uiPlastic.style.color = 'white';
+                        }, 500);
+                    }
+                } else {
+                    if(!gameState.isSwimming) {
+                        gameState.isSwimming = true;
+                        SoundManager.play('splash');
+                    }
+                    playerMesh.rotation.x = -Math.PI / 2; 
+                    playerGroup.position.y = 0.0;
+                    const burnRate = upgradeState.breath.val * fpsScale;
+                    gameState.oxygen = Math.max(gameState.oxygen - burnRate, 0);
+                    attackRangeMesh.visible = true; 
+                    
+                    if(gameState.oxygen <= 0) {
+                        gameState.hp -= 0.2 * fpsScale;
+                        dmgOverlay.style.boxShadow = "inset 0 0 50px rgba(0,0,255,0.5)";
+                    } else {
+                        dmgOverlay.style.boxShadow = "none";
+                    }
+                }
+            }
+
+            currentAction = null;
+            currentTarget = null;
+            actionBtn.style.display = 'none';
+
+            if(!gameState.isSwimming && !gameState.isSteering) {
+                const ghostWorldPos = new THREE.Vector3();
+                ghostMesh.getWorldPosition(ghostWorldPos);
+                if(playerGroup.position.distanceTo(ghostWorldPos) < 2 && !purifierGroup.visible) {
+                    currentAction = 'BUILD';
+                    actionBtn.innerText = "건설";
+                    actionBtn.style.display = 'flex';
+                    actionBtn.style.background = '#86efac';
+                }
+
+                if(!gameState.isRaftExpanded) {
+                    const expandGhostPos = new THREE.Vector3();
+                    expandGhostMesh.getWorldPosition(expandGhostPos);
+                    if(playerGroup.position.distanceTo(expandGhostPos) < 3) { 
+                        currentAction = 'EXPAND_RAFT';
+                        actionBtn.innerText = "확장 (10)"; 
+                        actionBtn.style.display = 'flex';
+                        actionBtn.style.background = '#3b82f6'; 
+                    }
+                }
+
+                if(lampGhostGroup.visible) {
+                    lampGhosts.forEach(ghost => {
+                        if(ghost.visible) {
+                            const gPos = new THREE.Vector3();
+                            ghost.getWorldPosition(gPos);
+                            if(playerGroup.position.distanceTo(gPos) < 2) {
+                                currentAction = 'BUILD_LAMP';
+                                currentTarget = ghost;
+                                actionBtn.innerText = "램프 (5)";
+                                actionBtn.style.display = 'flex';
+                                actionBtn.style.background = '#fbbf24'; // Yellow
+                            }
+                        }
+                    });
+                }
+
+                const rudderWorldPos = new THREE.Vector3();
+                rudderStick.getWorldPosition(rudderWorldPos);
+                if(playerGroup.position.distanceTo(rudderWorldPos) < 2) {
+                    currentAction = 'STEER';
+                    actionBtn.innerText = "조종";
+                    actionBtn.style.display = 'flex';
+                    actionBtn.style.background = '#fca5a5';
+                }
+            } else if (gameState.isSteering) {
+                currentAction = 'STEER';
+                actionBtn.style.display = 'flex';
+            }
+
+            if(Math.random() < 0.01 * fpsScale) spawnResource();
+            
+            const isBagFull = gameState.backpack >= gameState.maxBackpack;
+            const targets = [];
+            
+            if(!isBagFull) {
+                resources.forEach((w) => {
+                    w.position.y = Math.sin(gameState.gameTime * 2 + w.position.x) * 0.2;
+                    w.rotation.x = Math.sin(gameState.gameTime + w.position.z) * 0.2;
+
+                    const dist = playerGroup.position.distanceTo(w.position);
+                    if(gameState.isSwimming && dist < upgradeState.harpoonRange.val) { 
+                        targets.push({ mesh: w, dist: dist });
+                    }
+                });
+            } else {
+                resources.forEach((w) => {
+                    w.position.y = Math.sin(gameState.gameTime * 2 + w.position.x) * 0.2;
+                    w.rotation.x = Math.sin(gameState.gameTime + w.position.z) * 0.2;
+                });
+            }
+
+            targets.sort((a, b) => a.dist - b.dist);
+            const activeTargets = targets.slice(0, Math.floor(upgradeState.harpoonCount.val));
+
+            harpoonPool.forEach(line => line.visible = false);
+
+            const deadResources = [];
+
+            activeTargets.forEach((t, idx) => {
+                const targetRes = t.mesh;
+                const line = harpoonPool[idx]; 
+                if(line) {
+                    line.visible = true;
+                    const positions = line.geometry.attributes.position.array;
+                    positions[0] = playerGroup.position.x;
+                    positions[1] = playerGroup.position.y + 0.3;
+                    positions[2] = playerGroup.position.z;
+                    positions[3] = targetRes.position.x;
+                    positions[4] = targetRes.position.y;
+                    positions[5] = targetRes.position.z;
+                    line.geometry.attributes.position.needsUpdate = true;
+
+                    const dmg = upgradeState.harvestSpeed.val * fpsScale;
+                    targetRes.userData.hp -= dmg;
+                    if(targetRes.userData.hp <= 0) {
+                        deadResources.push(targetRes);
+                    }
+                }
+            });
+
+            deadResources.forEach(w => {
+                if(gameState.backpack < gameState.maxBackpack) {
+                    gameState.backpack++;
+                    if(w.userData.type === 'plastic') gameState.tempPlastic++;
+                    else {
+                        gameState.tempWood++;
+                    }
+
+                    scene.remove(w);
+                    resources.splice(resources.indexOf(w), 1);
+                    uiBackpack.classList.add('text-white');
+                    setTimeout(() => uiBackpack.classList.remove('text-white'), 100);
+                }
+            });
+
+
+            sharks.forEach(shark => {
+                if (gameState.gameTime > shark.userData.nextDashTime && !shark.userData.isDashing) {
+                    shark.userData.isDashing = true;
+                    shark.userData.dashEndTime = gameState.gameTime + 0.5; 
+                    shark.userData.nextDashTime = gameState.gameTime + 1 + Math.random() * 9; 
+                }
+
+                if (shark.userData.isDashing && gameState.gameTime > shark.userData.dashEndTime) {
+                    shark.userData.isDashing = false;
+                }
+
+                let baseSpeed = CONSTANTS.SHARK_SPEED;
+                if(gameState.isNight) baseSpeed *= 1.5; 
+                
+                const currentSharkSpeed = (shark.userData.isDashing ? baseSpeed * 3 : baseSpeed) * fpsScale;
+
+                const distToPlayer = shark.position.distanceTo(playerGroup.position);
+                
+                if(gameState.isNight) {
+                    shark.userData.state = 'CHASE';
+                } else {
+                    if(gameState.isSwimming && distToPlayer < CONSTANTS.SHARK_CHASE_DIST) {
+                        shark.userData.state = 'CHASE';
+                    } else {
+                        shark.userData.state = 'PATROL';
+                    }
+                }
+
+                if(shark.userData.state === 'PATROL') {
+                    shark.userData.angle += 0.005 * fpsScale;
+                    const radiusVariation = Math.sin(shark.userData.angle * 3 + gameState.gameTime) * 3; 
+                    const r = 20 + radiusVariation;
+                    
+                    const tx = raftGroup.position.x + Math.cos(shark.userData.angle) * r;
+                    const tz = raftGroup.position.z + Math.sin(shark.userData.angle) * r;
+                    
+                    shark.lookAt(tx, 0, tz);
+                    const lerpAlpha = 1 - Math.pow(1 - 0.02, fpsScale);
+                    shark.position.lerp(new THREE.Vector3(tx, -0.5, tz), lerpAlpha);
+                } else {
+                    shark.lookAt(playerGroup.position.x, 0, playerGroup.position.z);
+                    shark.translateZ(currentSharkSpeed); 
+
+                    const hitDist = CONSTANTS.SHARK_ATTACK_DIST + CONSTANTS.PLAYER_RADIUS;
+                    if(distToPlayer < hitDist) {
+                        gameState.hp -= CONSTANTS.SHARK_DAMAGE * dt;
+                        dmgOverlay.style.boxShadow = "inset 0 0 100px rgba(255,0,0,0.8)";
+                        setTimeout(() => dmgOverlay.style.boxShadow = "none", 100);
+                        
+                        const pushDir = playerGroup.position.clone().sub(shark.position).normalize();
+                        playerGroup.position.add(pushDir.multiplyScalar(0.5 * fpsScale));
+                    }
+                }
+            });
+
+            const targetCamPos = playerGroup.position.clone();
+            targetCamPos.add(new THREE.Vector3(0, 35, 25)); 
+            const camLerp = 1 - Math.pow(1 - 0.1, fpsScale);
+            camera.position.lerp(targetCamPos, camLerp);
+            camera.lookAt(playerGroup.position);
+
+            if(gameState.hp <= 0) {
+                gameState.isDead = true;
+                document.getElementById('game-over').style.display = 'flex';
+            }
+
+            updateUI(activeTargets);
+            renderer.render(scene, camera);
+        }
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        animate();
+
+    </script>
+</body>
+</html>
